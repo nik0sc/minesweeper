@@ -19,6 +19,7 @@ import numpy as np
 from collections import OrderedDict, deque, defaultdict
 from traceback import print_exc
 
+
 class MyAI(AI):
     """
     My AI class.
@@ -147,6 +148,7 @@ class MyAI(AI):
             # Agent's next action
             self.current_action = self.action_queue.popleft()
             print('<<< Taking popped action {}'.format(self.current_action))
+            print('Current action queue: {}'.format(self.action_queue))
             return self.current_action
         except (ValueError, IndexError):
             print('!!! ValueError or IndexError in getAction')
@@ -372,8 +374,10 @@ class Window:
         tile_value = self.score
         print('Score: {} at {}'.format(tile_value, self.center_window))
 
-        if tile_value < 0:
+        if tile_value == Minefield.UNFLAGGED:
             raise ValueError('Still covered')
+        elif tile_value == Minefield.FLAGGED:
+            print('! remaining_at on already-flagged tile')
 
         flagged_count = len(self._window[self._window == Minefield.FLAGGED])
         covered_count = len(self._window[self._window == Minefield.UNFLAGGED])
@@ -382,3 +386,27 @@ class Window:
             raise ValueError('Too many flags around this tile')
 
         return tile_value - flagged_count, flagged_count, covered_count
+
+
+class Action(Action):
+    """
+    Improved action class (because the existing one is a pain to debug)
+    """
+    _move_tostr = {
+        AI.Action.UNCOVER: 'UNCOVER',
+        AI.Action.FLAG: 'FLAG',
+        AI.Action.UNFLAG: 'UNFLAG',
+        AI.Action.LEAVE: 'LEAVE'
+    }
+
+    def __str__(self):
+        if self.getMove() in (AI.Action.UNFLAG, AI.Action.FLAG):
+            return '<Action: {} at ({},{})>'.format(
+                self._move_tostr[self.getMove()],
+                self.getX(),
+                self.getY()
+            )
+        else:
+            return '<Action: {}>'.format(self._move_tostr[self.getMove()])
+
+    __repr__ = __str__
