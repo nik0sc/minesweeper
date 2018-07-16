@@ -19,6 +19,13 @@ import numpy as np
 from collections import OrderedDict, deque, defaultdict
 from traceback import print_exc
 
+DEBUG_PRINT = False
+
+
+def dprint(*args, **kwargs):
+    if DEBUG_PRINT:
+        print(*args, **kwargs)
+
 
 class MyAI(AI):
     """
@@ -51,13 +58,13 @@ class MyAI(AI):
         """
         while True:
             if len(self.action_queue) != 0:
-                print('<<< Things to do: leaving AI tick immediately')
+                dprint('<<< Things to do: leaving AI tick immediately')
                 return
 
             # Goal test
             field_count = self.mf.get_report()
             if field_count[self.mf.UNFLAGGED] == 0:
-                print('>>> Goal test passed! Global # Unflagged = 0')
+                dprint('>>> Goal test passed! Global # Unflagged = 0')
                 self.action_queue.append(Action(AI.Action.LEAVE))
                 return
 
@@ -65,23 +72,23 @@ class MyAI(AI):
                 # Ran out of things to do!
                 # The smart thing to do here is to apply some other problem
                 # solving strategy or even randomly uncover a tile.
-                print('Frontier is empty!!')
+                dprint('Frontier is empty!!')
                 return
 
             node = Window(self.mf, *self.frontier.dequeue())
-            print('Current node: {}'.format(node))
+            dprint('Current node: {}'.format(node))
 
             if node.center_field in self.explored:
-                print('>>> Skipping previously explored node')
+                dprint('>>> Skipping previously explored node')
                 continue
 
             node_rem_unflagged, node_flagged, node_covered = node.remaining_at()
-            print('Rem. unflagged: {} Flagged: {} Covered: {}'.format(
+            dprint('Rem. unflagged: {} Flagged: {} Covered: {}'.format(
                 node_rem_unflagged, node_flagged, node_covered
             ))
 
             if node_rem_unflagged == 0:
-                print('>>> Rule: {} no more tiles to flag (uncovering rest)'.format(node))
+                dprint('>>> Rule: {} no more tiles to flag (uncovering rest)'.format(node))
                 to_uncover = self.mf.filter_tiles(
                     node.adjacents,
                     lambda x: x == self.mf.UNFLAGGED
@@ -90,7 +97,7 @@ class MyAI(AI):
                     assert tile not in self.explored
                     self.action_queue.append(Action(AI.Action.UNCOVER, *tile))
             elif node_rem_unflagged == node_covered:
-                print('>>> Rule: {} tiles to flag = # covered (flagging rest)'.format(node))
+                dprint('>>> Rule: {} tiles to flag = # covered (flagging rest)'.format(node))
                 to_flag = self.mf.filter_tiles(
                     node.adjacents,
                     lambda x: x == self.mf.UNFLAGGED
@@ -99,23 +106,23 @@ class MyAI(AI):
                     self.action_queue.append(Action(AI.Action.FLAG, *tile))
                     self.mf.flag_at(*tile)
             else:
-                print('>>> Nothing to do at {}'.format(node))
+                dprint('>>> Nothing to do at {}'.format(node))
                 # Dead end for now, hopefully agent can find a path back here?
                 continue
 
             for adjacent in node.adjacents:
                 if adjacent not in self.explored:
-                    print('Frontier: Enqueueing {}'.format(adjacent))
+                    dprint('Frontier: Enqueueing {}'.format(adjacent))
                     self.frontier.enqueue(adjacent)
 
             if node_covered == 0:
-                print('Adding {} to explored'.format(node))
+                dprint('Adding {} to explored'.format(node))
                 self.explored.add(node.center_field)
 
     def getAction(self, number: int) -> "Action Object":
         # WARNING! ValueErrors and IndexErrors propagated from here are
         # swallowed up by the World class and an unhelpful error message results
-        print('>>> Entering getAction')
+        dprint('>>> Entering getAction')
         try:
             if number != -1:
                 # Last action was an uncover action. Save the percept
@@ -125,7 +132,7 @@ class MyAI(AI):
                     self.current_action.getY(),
                     number
                 )
-                print('>>> Update board at ({}, {}) with uncover percept {}'.format(
+                dprint('>>> Update board at ({}, {}) with uncover percept {}'.format(
                     *update_info
                 ))
                 self.mf.update_board(*update_info)
@@ -136,29 +143,29 @@ class MyAI(AI):
 
             if len(self.action_queue) == 0:
                 # Run the AI.
-                print('!!! Running AI tick')
+                dprint('!!! Running AI tick')
                 self.tick()
-                print('??? AI thinks the world looks like this')
+                dprint('??? AI thinks the world looks like this')
                 self.mf.inspect()
                 if len(self.action_queue) == 0:
                     # Stalled?
-                    print('<<< Agent couldn\'t produce action, leaving...')
+                    dprint('<<< Agent couldn\'t produce action, leaving...')
                     return Action(AI.Action.LEAVE)
 
             # Agent's next action
             self.current_action = self.action_queue.popleft()
-            print('<<< Taking popped action {}'.format(self.current_action))
-            print('Current action queue ({}): {}'.format(
+            dprint('<<< Taking popped action {}'.format(self.current_action))
+            dprint('Current action queue ({}): {}'.format(
                 len(self.action_queue), self.action_queue))
-            print('Current frontier ({}): {}'.format(
+            dprint('Current frontier ({}): {}'.format(
                 len(self.frontier), self.frontier
             ))
-            print('Current explored ({}): {}'.format(
+            dprint('Current explored ({}): {}'.format(
                 len(self.explored), self.explored
             ))
             return self.current_action
         except (ValueError, IndexError):
-            print('!!! ValueError or IndexError in getAction')
+            dprint('!!! ValueError or IndexError in getAction')
             print_exc()
             raise
 
@@ -239,7 +246,7 @@ class Minefield:
 
     def update_board(self, x, y, value):
         if self.board[x, y] != -1:
-            print('Warning: Updating a previously-set tile')
+            dprint('Warning: Updating a previously-set tile')
 
         assert value in self.TILE_VALUES, \
             '{} is not a valid tile value'.format(value)
@@ -281,18 +288,18 @@ class Minefield:
                 for y in range(self.board.shape[1]))
 
     def inspect(self):
-        print('>>> Current board state\n')
+        dprint('>>> Current board state\n')
         for row in self.board:
             for tile in row:
                 if tile == self.UNFLAGGED:
-                    print(' . ', end='')
+                    dprint(' . ', end='')
                 elif tile == self.FLAGGED:
-                    print(' ? ', end='')
+                    dprint(' ? ', end='')
                 else:
-                    print(' {} '.format(tile), end='')
-            print()
+                    dprint(' {} '.format(tile), end='')
+            dprint()
         counter = self.get_report()
-        print('\n>>> Flagged: {} Remaining: {}'.format(
+        dprint('\n>>> Flagged: {} Remaining: {}'.format(
             counter[self.FLAGGED],
             self.total_mines - counter[self.FLAGGED]))
 
@@ -376,15 +383,15 @@ class Window:
         """
         Remaining unflagged, flagged, and covered tiles around this tile.
         """
-        print('Window:')
-        print(self._window)
+        dprint('Window:')
+        dprint(self._window)
         tile_value = self.score
-        print('Score: {} at {}'.format(tile_value, self.center_window))
+        dprint('Score: {} at {}'.format(tile_value, self.center_window))
 
         if tile_value == Minefield.UNFLAGGED:
             raise ValueError('Still covered')
         elif tile_value == Minefield.FLAGGED:
-            print('! remaining_at on already-flagged tile')
+            dprint('! remaining_at on already-flagged tile')
 
         flagged_count = len(self._window[self._window == Minefield.FLAGGED])
         covered_count = len(self._window[self._window == Minefield.UNFLAGGED])
