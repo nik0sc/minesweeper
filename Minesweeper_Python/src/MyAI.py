@@ -148,7 +148,14 @@ class MyAI(AI):
             # Agent's next action
             self.current_action = self.action_queue.popleft()
             print('<<< Taking popped action {}'.format(self.current_action))
-            print('Current action queue: {}'.format(self.action_queue))
+            print('Current action queue ({}): {}'.format(
+                len(self.action_queue), self.action_queue))
+            print('Current frontier ({}): {}'.format(
+                len(self.frontier), self.frontier
+            ))
+            print('Current explored ({}): {}'.format(
+                len(self.explored), self.explored
+            ))
             return self.current_action
         except (ValueError, IndexError):
             print('!!! ValueError or IndexError in getAction')
@@ -382,7 +389,7 @@ class Window:
         flagged_count = len(self._window[self._window == Minefield.FLAGGED])
         covered_count = len(self._window[self._window == Minefield.UNFLAGGED])
 
-        if flagged_count > tile_value:
+        if flagged_count > tile_value >= 0:
             raise ValueError('Too many flags around this tile')
 
         return tile_value - flagged_count, flagged_count, covered_count
@@ -400,13 +407,13 @@ class Action(Action):
     }
 
     def __str__(self):
-        if self.getMove() in (AI.Action.UNFLAG, AI.Action.FLAG):
+        if self.getMove() == AI.Action.LEAVE:
+            return '<Action: {}>'.format(self._move_tostr[self.getMove()])
+        else:
             return '<Action: {} at ({},{})>'.format(
                 self._move_tostr[self.getMove()],
                 self.getX(),
                 self.getY()
             )
-        else:
-            return '<Action: {}>'.format(self._move_tostr[self.getMove()])
 
     __repr__ = __str__
