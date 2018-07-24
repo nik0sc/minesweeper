@@ -19,7 +19,7 @@ import numpy as np
 from collections import OrderedDict, deque, defaultdict
 from traceback import print_exc
 
-DEBUG_PRINT = False
+DEBUG_PRINT = True
 
 
 def dprint(*args, **kwargs):
@@ -51,6 +51,18 @@ class MyAI(AI):
         # This action is already taken by the game when it starts
         self.current_action = Action(AI.Action.UNCOVER, startX, startY)
 
+    def goal_test(self):
+        """
+        Goal test.
+        :return: True if goal state is reached
+        """
+        field_count = self.mf.get_report()
+        if field_count[self.mf.UNFLAGGED] == 0:
+            dprint('>>> Goal test passed! Global # Unflagged = 0')
+            return True
+        else:
+            return False
+
     def tick(self):
         """
         Advance the AI.
@@ -61,18 +73,16 @@ class MyAI(AI):
                 dprint('<<< Things to do: leaving AI tick immediately')
                 return
 
-            # Goal test
-            field_count = self.mf.get_report()
-            if field_count[self.mf.UNFLAGGED] == 0:
-                dprint('>>> Goal test passed! Global # Unflagged = 0')
+            if self.goal_test():
                 self.action_queue.append(Action(AI.Action.LEAVE))
                 return
 
             if len(self.frontier) == 0:
                 # Ran out of things to do!
-                # The smart thing to do here is to apply some other problem
-                # solving strategy or even randomly uncover a tile.
-                dprint('Frontier is empty!!')
+                dprint('!!! Frontier is empty!!')
+                # Try looking for special patterns
+                dprint('>>> Looking for patterns')
+                self.search_edge_patterns()
                 return
 
             node = Window(self.mf, *self.frontier.dequeue())
@@ -82,42 +92,69 @@ class MyAI(AI):
                 dprint('>>> Skipping previously explored node')
                 continue
 
-            node_rem_unflagged, node_flagged, node_covered = node.remaining_at()
-            dprint('Rem. unflagged: {} Flagged: {} Covered: {}'.format(
-                node_rem_unflagged, node_flagged, node_covered
-            ))
+            self.apply_opening_rule(node)
 
-            if node_rem_unflagged == 0:
-                dprint('>>> Rule: {} no more tiles to flag (uncovering rest)'.format(node))
-                to_uncover = self.mf.filter_tiles(
-                    node.adjacents,
-                    lambda x: x == self.mf.UNFLAGGED
-                )
-                for tile in to_uncover:
-                    assert tile not in self.explored
-                    self.action_queue.append(Action(AI.Action.UNCOVER, *tile))
-            elif node_rem_unflagged == node_covered:
-                dprint('>>> Rule: {} tiles to flag = # covered (flagging rest)'.format(node))
-                to_flag = self.mf.filter_tiles(
-                    node.adjacents,
-                    lambda x: x == self.mf.UNFLAGGED
-                )
-                for tile in to_flag:
-                    self.action_queue.append(Action(AI.Action.FLAG, *tile))
-                    self.mf.flag_at(*tile)
-            else:
-                dprint('>>> Nothing to do at {}'.format(node))
-                # Dead end for now, hopefully agent can find a path back here?
-                continue
+    def apply_opening_rule(self, node):
+        """
+        Apply the opening ruleset to the given tile, hopefully producing actions
+        to add to the action queue and more nodes to add to the frontier.
+        :param node: The <Window> object to apply the rule on.
+        """
+        node_rem_unflagged, node_flagged, node_covered = node.remaining_at()
+        dprint('Rem. unflagged: {} Flagged: {} Covered: {}'.format(
+            node_rem_unflagged, node_flagged, node_covered
+        ))
 
-            for adjacent in node.adjacents:
-                if adjacent not in self.explored:
-                    dprint('Frontier: Enqueueing {}'.format(adjacent))
-                    self.frontier.enqueue(adjacent)
+        if node_rem_unflagged == 0:
+            dprint('>>> Rule: {} no more tiles to flag (uncovering rest)'.format(node))
+            to_uncover = self.mf.filter_tiles(
+                node.adjacents,
+                lambda x: x == self.mf.UNFLAGGED
+            )
+            for tile in to_uncover:
+                assert tile not in self.explored
+                self.action_queue.append(Action(AI.Action.UNCOVER, *tile))
+        elif node_rem_unflagged == node_covered:
+            dprint('>>> Rule: {} tiles to flag = # covered (flagging rest)'.format(node))
+            to_flag = self.mf.filter_tiles(
+                node.adjacents,
+                lambda x: x == self.mf.UNFLAGGED
+            )
+            for tile in to_flag:
+                self.action_queue.append(Action(AI.Action.FLAG, *tile))
+                self.mf.flag_at(*tile)
+        else:
+            dprint('>>> Nothing to do at {}'.format(node))
+            # Dead end for now, hopefully agent can find a path back here?
+            return
 
-            if node_covered == 0:
-                dprint('Adding {} to explored'.format(node))
-                self.explored.add(node.center_field)
+        for adjacent in node.adjacents:
+            if adjacent not in self.explored:
+                dprint('Frontier: Enqueueing {}'.format(adjacent))
+                self.frontier.enqueue(adjacent)
+
+        if node_covered == 0:
+            dprint('Adding {} to explored'.format(node))
+            self.explored.add(node.center_field)
+
+    def get_boundary(self):
+        """
+        Return the "boundary" of the cleared areas of the board
+        :return: List of (x,y)-tuples
+        """
+        pass
+
+    def search_edge_patterns(self):
+        """
+        Search the board for 1-1 and 1-2 patterns that indicate a mine or clear
+        space nearby
+        """
+        # actions = []
+        # for window in self.mf.window_iter(field_edges=False):
+        #     if window[1,1] == 1:
+        #         if window[0,1] == 1 and window[]:
+        #             actions.append(Action(AI.Action.UNCOVER))
+        pass
 
     def getAction(self, number: int) -> "Action Object":
         # WARNING! ValueErrors and IndexErrors propagated from here are
@@ -149,7 +186,7 @@ class MyAI(AI):
                 self.mf.inspect()
                 if len(self.action_queue) == 0:
                     # Stalled?
-                    dprint('<<< Agent couldn\'t produce action, leaving...')
+                    dprint('!!! Agent couldn\'t produce action, leaving')
                     return Action(AI.Action.LEAVE)
 
             # Agent's next action
@@ -278,14 +315,19 @@ class Minefield:
         else:
             return Window(self, x, y)
 
-    def window_iter(self):
+    def window_iter(self, field_edges=True):
         """
 
         :return:
         """
-        return (self.window_at(x, y)
-                for x in range(self.board.shape[0])
-                for y in range(self.board.shape[1]))
+        if field_edges:
+            return (self.window_at(x, y)
+                    for x in range(self.board.shape[0])
+                    for y in range(self.board.shape[1]))
+        else:
+            return (self.window_at(x, y)
+                    for x in range(1, self.board.shape[0] - 1)
+                    for y in range(1, self.board.shape[1] - 1))
 
     def inspect(self):
         dprint('>>> Current board state\n')
@@ -400,6 +442,26 @@ class Window:
             raise ValueError('Too many flags around this tile')
 
         return tile_value - flagged_count, flagged_count, covered_count
+
+
+class Pattern():
+    """
+    Pattern matching class.
+    """
+    def __init__(self, tiles_to_match, action, where, symmetry):
+        self.proto_tiles_to_match = tiles_to_match
+        self.action = action
+        self.where = where
+        self.tiles_to_match = []
+
+    ROT_NONE = 0
+    ROT_2 = 1
+    ROT_4 = 2
+
+    def match(self, node):
+        for coords, value in self.tiles_to_match:
+            if node[coords] == value:
+                pass
 
 
 class Action(Action):
