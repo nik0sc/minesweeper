@@ -303,9 +303,7 @@ class Minefield:
     def __init__(self, dim_x, dim_y, start_x, start_y, total_mines):
         # Create an empty starting minefield
         self.board = np.full((dim_x, dim_y), self.UNFLAGGED, dtype=np.int8)
-        # have a notion of "current tile"
-        self._cursor = (0, 0)
-        self.cursor = (start_x, start_y)
+
         self.total_mines = total_mines
 
     def __getitem__(self, key):
@@ -325,17 +323,6 @@ class Minefield:
 
     def check_in_bounds(self, x, y):
         return (0 <= x < self.dim_x) and (0 <= y < self.dim_y)
-
-    def get_cursor(self):
-        return self._cursor
-
-    def set_cursor(self, new):
-        for a, b in zip(new, self.board.shape):
-            assert 0 <= a < b, 'Cursor not in array bounds'
-
-        self._cursor = new
-
-    cursor = property(get_cursor, set_cursor)
 
     def get_report(self):
         return defaultdict(int, zip(*np.unique(self.board, return_counts=True)))
@@ -371,7 +358,7 @@ class Minefield:
 
         self.board[x, y] = -1
 
-    def window_at(self, x=None, y=None):
+    def window_at(self, x, y):
         """
         Get a window into the game board.
 
@@ -379,10 +366,7 @@ class Minefield:
         :param y:
         :return:
         """
-        if x is None or y is None:
-            return Window(self, *self.cursor)
-        else:
-            return Window(self, x, y)
+        return Window(self, x, y)
 
     def window_iter(self, field_edges=True):
         """
