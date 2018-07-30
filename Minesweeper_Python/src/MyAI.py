@@ -35,7 +35,7 @@ class MyAI(AI):
     """
     def __init__(self, rowDimension, colDimension, totalMines, startX, startY):
         # Minefield state
-        self.mf = Minefield(rowDimension, colDimension, startX, startY, totalMines)
+        self.mf = Minefield(colDimension, rowDimension, startX, startY, totalMines)
 
         # Add starting point to the expansion
         # Frontier is some kind of FIFO here. We just need constant-time
