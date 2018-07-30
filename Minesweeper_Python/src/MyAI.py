@@ -18,6 +18,8 @@ from Action import Action
 import numpy as np
 from collections import OrderedDict, deque, defaultdict
 from traceback import print_exc
+import itertools as it
+import random
 
 DEBUG_PRINT = True
 
@@ -81,9 +83,29 @@ class MyAI(AI):
                 # Ran out of things to do!
                 dprint('!!! Frontier is empty!!')
                 # Try looking for special patterns
-                dprint('>>> Looking for patterns')
-                self.search_edge_patterns()
-                return
+                # dprint('>>> Looking for patterns')
+                # edge_actions = self.search_edge_patterns()
+                # if len(edge_actions) > 0:
+                #     self.action_queue.extend(edge_actions)
+                #     dprint('<<< Edge patterns found: things to do')
+                #     return
+
+                dprint('>>> Forcing rescan')
+                self.rescan()
+                if len(self.frontier) == 0 or len(self.action_queue) == 0:
+                    dprint('Random uncover time')
+                    self.uncover_random()
+                    assert len(self.action_queue) != 0
+                    return
+
+
+                # if len(self.frontier) == 0:
+                #     # Stalled?
+                #     dprint('>>> Forcing rescan')
+                #     self.rescan()
+                #
+                # # Don't try to dequeue nodes from an empty frontier
+                # return
 
             node = Window(self.mf, *self.frontier.dequeue())
             dprint('Current node: {}'.format(node))
@@ -137,6 +159,34 @@ class MyAI(AI):
             dprint('Adding {} to explored'.format(node))
             self.explored.add(node.center_field)
 
+    def uncover_random(self):
+        """
+        Uncover a random tile
+        :return:
+        """
+        # Select the unflagged tiles
+        where_result = np.where(self.mf.board==self.mf.UNFLAGGED)
+        unflagged_tiles = np.dstack(np.array(list(where_result))).reshape((-1, 2))
+        dprint('Unflagged tiles: {}'.format(unflagged_tiles))
+
+        # Remove tiles next to an unflagged one
+        unflagged_safe = []
+        for coord in unflagged_tiles:
+            node = Window(self.mf, *coord)
+            # Don't want tiles with uncovered tiles around them
+            if np.all(node.window<=0):
+                unflagged_safe.append(coord)
+
+        # If none are left, fall back to the unfiltered list
+        if len(unflagged_safe) == 0:
+            unflagged_safe = unflagged_tiles
+
+        # Pick one and live with it
+        coord_to_unflag = random.choice(unflagged_safe)
+        self.action_queue.append(
+            Action(AI.Action.UNCOVER, *coord_to_unflag)
+        )
+
     def get_boundary(self):
         """
         Return the "boundary" of the cleared areas of the board
@@ -149,12 +199,26 @@ class MyAI(AI):
         Search the board for 1-1 and 1-2 patterns that indicate a mine or clear
         space nearby
         """
-        # actions = []
+        actions = []
         # for window in self.mf.window_iter(field_edges=False):
         #     if window[1,1] == 1:
         #         if window[0,1] == 1 and window[]:
         #             actions.append(Action(AI.Action.UNCOVER))
-        pass
+        for x in pattern_info:
+            pattern = Pattern(**x)
+            actions.extend(pattern.match_board(self.mf))
+
+        return actions
+
+
+    def rescan(self):
+        """
+        Rescan the board and find new actions to take.
+        :return:
+        """
+        for node in self.mf.window_iter():
+            if node.score != Minefield.UNFLAGGED:
+                self.apply_opening_rule(node)
 
     def getAction(self, number: int) -> "Action Object":
         # WARNING! ValueErrors and IndexErrors propagated from here are
@@ -184,8 +248,8 @@ class MyAI(AI):
                 self.tick()
                 dprint('??? AI thinks the world looks like this')
                 self.mf.inspect()
+
                 if len(self.action_queue) == 0:
-                    # Stalled?
                     dprint('!!! Agent couldn\'t produce action, leaving')
                     return Action(AI.Action.LEAVE)
 
@@ -448,20 +512,191 @@ class Pattern():
     """
     Pattern matching class.
     """
-    def __init__(self, tiles_to_match, action, where, symmetry):
-        self.proto_tiles_to_match = tiles_to_match
-        self.action = action
-        self.where = where
-        self.tiles_to_match = []
+    UNFLAGGED = -1
+    FLAGGED = -2
+    DONTMATCH = -3
+    UNFLAGGED_UNCOVER = -4
+    UNFLAGGED_FLAG = -5
+    SPECIALS = (DONTMATCH, UNFLAGGED_FLAG, UNFLAGGED_UNCOVER)
 
     ROT_NONE = 0
-    ROT_2 = 1
-    ROT_4 = 2
+    ROT_4 = 1
+    ROT_4_FLIP = 2
 
-    def match(self, node):
-        for coords, value in self.tiles_to_match:
-            if node[coords] == value:
-                pass
+    _sym_name = {
+        ROT_NONE: 'None',
+        ROT_4: '4-way rotation',
+        ROT_4_FLIP: '4-way rotation w/ flip'
+    }
+
+    def __init__(self, pattern: np.ndarray, symmetry=ROT_4_FLIP,
+                 where=None, name=''):
+        self.patterns = []
+        self.name = name
+        self.symmetry = symmetry
+
+        if symmetry == self.ROT_NONE:
+            self.patterns.append(pattern)
+        elif symmetry == self.ROT_4:
+            self.patterns.extend(np.rot90(pattern, k) for k in range(4))
+            assert len(self.patterns) == 4
+        elif symmetry == self.ROT_4_FLIP:
+            self.patterns.extend(np.rot90(pattern, k) for k in range(4))
+            self.patterns.extend(np.rot90(np.fliplr(pattern), k) for k in range(4))
+            assert len(self.patterns) == 8
+        else:
+            raise ValueError
+
+        self.get_tiles = where or self.tiles_all
+
+    def __str__(self):
+        return '<Pattern "{}", symmetry {}>'.format(
+            self.name, self._sym_name.get(self.symmetry))
+
+    __repr__ = __str__
+
+    @classmethod
+    def tiles_all(cls, field: Minefield):
+        """
+        Return all tiles in the field
+        :param field: The minefield
+        """
+        return [(x, y) for x in range(field.dim_x) for y in range(field.dim_y)]
+
+    @classmethod
+    def tiles_at_innerborder(cls, field: Minefield):
+        """
+        Return a list of all tiles 1 tile away (straight or diagonally) from
+        the border of the minefield.
+        :param field: The minefield
+        """
+        return (
+            [
+                (x, y)
+                for x in range(1, field.dim_x - 1)
+                for y in (1, field.dim_y - 2)
+            ]
+            + [
+                (x, y)
+                for x in (1, field.dim_x - 2)
+                for y in range(2, field.dim_y - 2)
+            ])
+
+    @classmethod
+    def tiles_at_scoredtiles(cls, field: Minefield):
+        """
+        Return a list of tiles that have a nonzero score (are known to be
+        touching a mine)
+        :param field: The minefield
+        """
+        return field.filter_tiles(
+            cls.tiles_all(field),
+            lambda x: x > 0
+        )
+
+    def match_one(self, node: Window):
+        """
+        Match this pattern against a window and return actions to take
+        :param node:
+        :return:
+        """
+        if self.patterns[0].shape != node.window.shape:
+            dprint('!!! Pattern shape and window shape mismatch at {}'
+                   .format(node))
+            return []
+
+        for pattern in self.patterns:
+            # dstack is like zip but for ndarrays
+            # 'zip' and flatten
+            zipped = np.dstack((pattern, node.window)).reshape((-1, 2))
+
+            bad_pattern = False
+            for pair in zipped:
+
+                if pair[0] == self.DONTMATCH:
+                    # Skip this pair
+                    continue
+                elif ((pair[0] == self.UNFLAGGED_UNCOVER or pair[0] == self.UNFLAGGED_FLAG)
+                        and pair[1] != node.field.UNFLAGGED):
+                    # Won't work either
+                    dprint('Pattern failed: unflagged, node: {}, pair: {}'.format(node, pair))
+                    dprint('Pattern: {}'.format(pattern))
+                    bad_pattern = True
+                    break
+                elif pair[0] >= 0 and pair[0] != pair[1]:
+                    # This sub-pattern won't work, move on to the next one
+                    # assert pair[0] not in self.SPECIALS
+                    dprint('Pattern failed: notequal, node: {}, pair: {}'.format(node, pair))
+                    dprint('Pattern: {}'.format(pattern))
+                    bad_pattern = True
+                    break
+
+            if bad_pattern:
+                dprint('Moving on to next pattern in {}'.format(self))
+                continue
+
+            # Made it out of here, this pattern is good
+            dprint('Good pattern: {}'.format(self))
+
+            # Search this particular pattern for the action tiles
+            # Then offset from centre_field
+            flag_at = [tuple(c + node.center_field - node.center_window
+                             for c in coord)
+                       for coord in np.where(pattern==self.UNFLAGGED_FLAG)]
+            uncover_at = [tuple(c + node.center_field - node.center_window
+                                for c in coord)
+                          for coord in np.where(pattern==self.UNFLAGGED_UNCOVER)]
+
+            flag_actions = [Action(AI.Action.FLAG, *d)
+                            for d in flag_at]
+            uncover_actions = [Action(AI.Action.UNCOVER, *d)
+                               for d in uncover_at]
+
+            # if len(flag_actions) > 0:
+            dprint('flag actions: {}'.format(flag_actions))
+            # if len(uncover_actions) > 0:
+            dprint('uncover actions: {}'.format(uncover_actions))
+
+            return flag_actions + uncover_actions
+
+    def match_board(self, mf: Minefield):
+        tiles = self.get_tiles(mf)
+        result = list(it.chain(self.match_one(Window(mf, *coord))
+                               for coord in tiles))
+        return result
+
+pattern_info = [
+    {
+        'pattern': [
+            [0, 0, 0],
+            [1, 2, 1],
+            [Pattern.UNFLAGGED_FLAG, Pattern.UNFLAGGED, Pattern.UNFLAGGED_FLAG]
+        ],
+        'symmetry': Pattern.ROT_4,
+        'where': Pattern.tiles_at_scoredtiles,
+        'name': '1-2-1'
+    },
+    {
+        'pattern': [
+            [0, 0, Pattern.DONTMATCH],
+            [1, 1, Pattern.DONTMATCH],
+            [Pattern.UNFLAGGED, Pattern.UNFLAGGED, Pattern.UNFLAGGED_UNCOVER]
+        ],
+        'symmetry': Pattern.ROT_4_FLIP,
+        'where': Pattern.tiles_at_innerborder,
+        'name': '1-1'
+    },
+    {
+        'pattern': [
+            [0, 0, Pattern.DONTMATCH],
+            [1, 2, Pattern.DONTMATCH],
+            [Pattern.UNFLAGGED, Pattern.UNFLAGGED, Pattern.UNFLAGGED_FLAG]
+        ],
+        'symmetry': Pattern.ROT_4_FLIP,
+        'where': Pattern.tiles_at_innerborder,
+        'name': '1-2'
+    }
+]
 
 
 class Action(Action):
