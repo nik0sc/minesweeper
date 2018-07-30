@@ -122,6 +122,9 @@ class MyAI(AI):
         to add to the action queue and more nodes to add to the frontier.
         :param node: The <Window> object to apply the rule on.
         """
+        if node.score < 0:
+            dprint('Not clear: node {} score {}'.format(node, node.score))
+
         node_rem_unflagged, node_flagged, node_covered = node.remaining_at()
         dprint('Rem. unflagged: {} Flagged: {} Covered: {}'.format(
             node_rem_unflagged, node_flagged, node_covered
@@ -218,7 +221,7 @@ class MyAI(AI):
         :return:
         """
         for node in self.mf.window_iter():
-            if node.score != Minefield.UNFLAGGED:
+            if node.score >= 0:
                 self.apply_opening_rule(node)
 
     def getAction(self, number: int) -> "Action Object":
@@ -496,7 +499,9 @@ class Window:
         dprint('Score: {} at {}'.format(tile_value, self.center_window))
 
         if tile_value == Minefield.UNFLAGGED:
-            raise ValueError('Still covered')
+            raise ValueError('Still covered', {
+                'window'
+            })
         elif tile_value == Minefield.FLAGGED:
             dprint('! remaining_at on already-flagged tile')
 
