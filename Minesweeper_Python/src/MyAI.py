@@ -182,10 +182,11 @@ class MyAI(AI):
             unflagged_safe = unflagged_tiles
 
         # Pick one and live with it
-        coord_to_unflag = random.choice(unflagged_safe)
+        coord_to_uncover = tuple(random.choice(unflagged_safe))
         self.action_queue.append(
-            Action(AI.Action.UNCOVER, *coord_to_unflag)
+            Action(AI.Action.UNCOVER, *coord_to_uncover)
         )
+        self.frontier.enqueue(coord_to_uncover)
 
     def get_boundary(self):
         """
