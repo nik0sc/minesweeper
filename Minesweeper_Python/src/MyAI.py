@@ -124,6 +124,7 @@ class MyAI(AI):
         """
         if node.score < 0:
             dprint('Not clear: node {} score {}'.format(node, node.score))
+            return
 
         node_rem_unflagged, node_flagged, node_covered = node.remaining_at()
         dprint('Rem. unflagged: {} Flagged: {} Covered: {}'.format(
