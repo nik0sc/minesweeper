@@ -500,7 +500,8 @@ class Window:
 
         if tile_value == Minefield.UNFLAGGED:
             raise ValueError('Still covered', {
-                'window'
+                'window': self.window,
+                'center_field': self.center_field
             })
         elif tile_value == Minefield.FLAGGED:
             dprint('! remaining_at on already-flagged tile')
